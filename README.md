@@ -1,3 +1,106 @@
+
+# raft-java
+Raft implementation library for Java.
+Based on the Raft paper (https://github.com/maemual/raft-zh_cn) and the open-source implementation by the Raft author: LogCabin (https://github.com/logcabin/logcabin).
+
+# Supported Features
+* Leader election
+* Log replication
+* Snapshot
+* Dynamic cluster membership changes
+
+## Quick Start
+To deploy a 3-instance Raft cluster locally on a single machine, run the following script:
+cd raft-java-example && sh deploy.sh
+This script deploys three instances (example1, example2, example3) in the raft-java-example/env directory.
+It also creates a client directory for testing the Raft cluster's read/write functionality.
+
+After successful deployment, you can test a write operation with:
+cd env/client
+./bin/run_client.sh "list://127.0.0.1:8051,127.0.0.1:8052,127.0.0.1:8053" hello world
+
+To test a read operation:
+./bin/run_client.sh "list://127.0.0.1:8051,127.0.0.1:8052,127.0.0.1:8053" hello
+
+# How to Use
+The following describes how to use the raft-java dependency to implement a distributed storage system.
+
+## Configure Dependency
+(Not yet published to Maven Central. You need to install it manually to your local repository)
+<dependency>
+    <groupId>com.github.raftimpl.raft</groupId>
+    <artifactId>raft-java-core</artifactId>
+    <version>1.9.0</version>
+</dependency>
+
+## Define Data Write and Read Interfaces
+Protobuf definitions:
+message SetRequest {
+    string key = 1;
+    string value = 2;
+}
+message SetResponse {
+    bool success = 1;
+}
+message GetRequest {
+    string key = 1;
+}
+message GetResponse {
+    string value = 1;
+}
+
+Java interface:
+public interface ExampleService {
+    Example.SetResponse set(Example.SetRequest request);
+    Example.GetResponse get(Example.GetRequest request);
+}
+
+## Server Usage
+
+1. Implement the StateMachine interface
+public interface StateMachine {
+    void writeSnapshot(String snapshotDir);
+    void readSnapshot(String snapshotDir);
+    void apply(byte[] dataBytes);
+}
+
+2. Implement Write and Read Logic
+In the ExampleService implementation, include:
+private RaftNode raftNode;
+private ExampleStateMachine stateMachine;
+
+Write logic:
+byte[] data = request.toByteArray();
+boolean success = raftNode.replicate(data, Raft.EntryType.ENTRY_TYPE_DATA);
+Example.SetResponse response = Example.SetResponse.newBuilder().setSuccess(success).build();
+
+Read logic (handled by state machine):
+Example.GetResponse response = stateMachine.get(request);
+
+3. Server Startup Logic
+RPCServer server = new RPCServer(localServer.getEndPoint().getPort());
+ExampleStateMachine stateMachine = new ExampleStateMachine();
+RaftOptions.snapshotMinLogSize = 10 * 1024;
+RaftOptions.snapshotPeriodSeconds = 30;
+RaftOptions.maxSegmentFileSize = 1024 * 1024;
+RaftNode raftNode = new RaftNode(serverList, localServer, stateMachine);
+RaftConsensusService raftConsensusService = new RaftConsensusServiceImpl(raftNode);
+server.registerService(raftConsensusService);
+RaftClientService raftClientService = new RaftClientServiceImpl(raftNode);
+server.registerService(raftClientService);
+ExampleService exampleService = new ExampleServiceImpl(raftNode, stateMachine);
+server.registerService(exampleService);
+server.start();
+raftNode.init();
+
+
+
+
+
+
+
+
+
 # raft-java
 Raft implementation library for Java.<br>
 参考自[Raft论文](https://github.com/maemual/raft-zh_cn)和Raft作者的开源实现[LogCabin](https://github.com/logcabin/logcabin)。
